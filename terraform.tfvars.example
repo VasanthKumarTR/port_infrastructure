@@ -1,0 +1,69 @@
+# Example Terraform Variables Configuration
+# Copy this file to terraform.tfvars and update with your actual values
+
+# Port.io Configuration (Required)
+port_client_id     = "your-port-client-id-here"
+port_client_secret = "your-port-client-secret-here"
+port_base_url      = "https://api.getport.io"
+
+# Environment Configuration
+environment = "prod"  # Options: prod, staging, dev
+team_email  = "platform-team@yourcompany.com"
+
+# AWS Configuration (Required for AWS integration)
+aws_access_key_id     = "AKIA..."
+aws_secret_access_key = "your-aws-secret-key"
+aws_region           = "us-west-2"
+
+# Azure Configuration (Required for Azure integration)
+azure_client_id       = "your-azure-client-id"
+azure_client_secret   = "your-azure-client-secret"
+azure_tenant_id       = "your-azure-tenant-id"
+azure_subscription_id = "your-azure-subscription-id"
+
+# GitHub Configuration (Required for GitHub integration)
+github_app_id          = "123456"
+github_private_key     = <<-EOF
+-----BEGIN RSA PRIVATE KEY-----
+your-github-app-private-key-content-here
+-----END RSA PRIVATE KEY-----
+EOF
+github_installation_id = "12345678"
+github_actions_webhook_url = "https://api.github.com/repos/yourorg/yourrepo/dispatches"
+
+# Azure DevOps Configuration (Optional)
+azdo_organization_url = "https://dev.azure.com/yourorganization"
+azdo_personal_token   = "your-azure-devops-pat"
+
+# Snyk Configuration (Optional)
+snyk_token        = "your-snyk-api-token"
+snyk_organization = "your-snyk-org-id"
+
+# Optional Configuration
+enable_audit_logging     = true
+drift_detection_schedule = "0 2 * * 1"  # Weekly on Monday at 2 AM
+sync_schedule           = "0 1 * * *"   # Daily at 1 AM
+
+# GitHub Actions Configuration
+available_teams = [
+  "platform",
+  "backend", 
+  "frontend",
+  "mobile",
+  "data",
+  "security",
+  "sre"
+]
+
+approval_recipients = [
+  "tech-lead@yourcompany.com",
+  "engineering-manager@yourcompany.com"
+]
+
+github_organization = "yourorganization"
+github_actions_repo = "port-infrastructure"
+
+# Webhook URLs for actions
+dora_webhook_url            = "https://your-dora-metrics-service.com/webhook"
+dora_collection_webhook_url = "https://your-dora-collector.com/webhook"
+port_webhook_url           = "https://your-port-webhook-handler.com/webhook"

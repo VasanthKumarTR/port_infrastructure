@@ -1,0 +1,303 @@
+name: Port Infrastructure Drift Detection
+
+on:
+  workflow_dispatch:
+    inputs:
+      scan_type:
+        description: 'Type of drift scan to perform'
+        required: true
+        default: 'incremental'
+        type: choice
+        options:
+          - full
+          - incremental
+          - targeted
+          - compliance
+      scope:
+        description: 'Scope of the drift detection'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - blueprints
+          - integrations
+          - actions
+          - entities
+      auto_remediate:
+        description: 'Automatically fix low-risk drifts'
+        required: false
+        default: false
+        type: boolean
+      notify_teams:
+        description: 'Send notifications to affected teams'
+        required: false
+        default: true
+        type: boolean
+  schedule:
+    # Run weekly drift detection every Monday at 2 AM UTC
+    - cron: '0 2 * * 1'
+
+env:
+  PORT_CLIENT_ID: ${{ secrets.PORT_CLIENT_ID }}
+  PORT_CLIENT_SECRET: ${{ secrets.PORT_CLIENT_SECRET }}
+
+jobs:
+  drift-detection:
+    name: Configuration Drift Detection
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.6.0
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests python-dotenv pyyaml
+          
+      - name: Initialize OpenTofu
+        run: |
+          tofu init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=port-infrastructure/prod/terraform.tfstate" \
+            -backend-config="region=us-west-2"
+
+      - name: Generate current configuration baseline
+        run: |
+          tofu show -json > current-state.json
+          
+      - name: Create drift detection script
+        run: |
+          cat << 'EOF' > drift_detector.py
+          #!/usr/bin/env python3
+          import json
+          import requests
+          import os
+          from datetime import datetime
+          
+          def get_port_token():
+              """Get Port.io access token"""
+              response = requests.post(
+                  "https://api.getport.io/v1/auth/access_token",
+                  json={
+                      "clientId": os.environ["PORT_CLIENT_ID"],
+                      "clientSecret": os.environ["PORT_CLIENT_SECRET"]
+                  }
+              )
+              return response.json()["accessToken"]
+          
+          def get_port_blueprints(token):
+              """Get all blueprints from Port"""
+              headers = {"Authorization": f"Bearer {token}"}
+              response = requests.get(
+                  "https://api.getport.io/v1/blueprints",
+                  headers=headers
+              )
+              return response.json()["blueprints"]
+          
+          def get_port_integrations(token):
+              """Get all integrations from Port"""
+              headers = {"Authorization": f"Bearer {token}"}
+              response = requests.get(
+                  "https://api.getport.io/v1/integrations",
+                  headers=headers
+              )
+              return response.json()["integrations"]
+          
+          def compare_configurations(terraform_state, port_config):
+              """Compare Terraform state with Port configuration"""
+              drifts = []
+              
+              # Compare blueprints
+              tf_blueprints = {}
+              for resource in terraform_state.get("values", {}).get("root_module", {}).get("resources", []):
+                  if resource["type"] == "port_blueprint":
+                      tf_blueprints[resource["values"]["identifier"]] = resource["values"]
+              
+              port_blueprints = {bp["identifier"]: bp for bp in port_config["blueprints"]}
+              
+              # Check for missing blueprints in Port
+              for identifier, tf_bp in tf_blueprints.items():
+                  if identifier not in port_blueprints:
+                      drifts.append({
+                          "type": "missing_blueprint",
+                          "identifier": identifier,
+                          "severity": "high",
+                          "description": f"Blueprint '{identifier}' exists in Terraform but not in Port"
+                      })
+                  else:
+                      # Compare blueprint properties
+                      port_bp = port_blueprints[identifier]
+                      if tf_bp.get("title") != port_bp.get("title"):
+                          drifts.append({
+                              "type": "blueprint_title_drift",
+                              "identifier": identifier,
+                              "severity": "medium",
+                              "description": f"Blueprint title mismatch: TF='{tf_bp.get('title')}', Port='{port_bp.get('title')}'"
+                          })
+              
+              # Check for extra blueprints in Port
+              for identifier in port_blueprints:
+                  if identifier not in tf_blueprints:
+                      drifts.append({
+                          "type": "extra_blueprint",
+                          "identifier": identifier,
+                          "severity": "medium",
+                          "description": f"Blueprint '{identifier}' exists in Port but not in Terraform"
+                      })
+              
+              return drifts
+          
+          def create_drift_entity(token, drift_data):
+              """Create drift detection entity in Port"""
+              headers = {"Authorization": f"Bearer {token}"}
+              
+              entity_data = {
+                  "identifier": f"drift-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+                  "title": f"Drift Detection - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                  "blueprint": "drift_detection",
+                  "properties": {
+                      "scan_id": f"drift-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+                      "scan_date": datetime.now().isoformat(),
+                      "scan_type": os.environ.get("SCAN_TYPE", "scheduled"),
+                      "status": "completed",
+                      "drift_detected": len(drift_data) > 0,
+                      "drift_count": len(drift_data),
+                      "critical_drifts": len([d for d in drift_data if d["severity"] == "critical"]),
+                      "high_drifts": len([d for d in drift_data if d["severity"] == "high"]),
+                      "medium_drifts": len([d for d in drift_data if d["severity"] == "medium"]),
+                      "low_drifts": len([d for d in drift_data if d["severity"] == "low"]),
+                      "scope": os.environ.get("SCOPE", "all"),
+                      "scan_duration_seconds": 0,  # Will be calculated
+                      "next_scan_due": "2024-01-08T02:00:00Z"  # Next Monday
+                  }
+              }
+              
+              response = requests.post(
+                  "https://api.getport.io/v1/blueprints/drift_detection/entities",
+                  headers=headers,
+                  json=entity_data
+              )
+              
+              return response.json()
+          
+          def main():
+              try:
+                  # Get Port token
+                  token = get_port_token()
+                  
+                  # Load current Terraform state
+                  with open("current-state.json", "r") as f:
+                      terraform_state = json.load(f)
+                  
+                  # Get Port configuration
+                  port_config = {
+                      "blueprints": get_port_blueprints(token),
+                      "integrations": get_port_integrations(token)
+                  }
+                  
+                  # Compare configurations
+                  drifts = compare_configurations(terraform_state, port_config)
+                  
+                  # Create drift detection entity
+                  drift_entity = create_drift_entity(token, drifts)
+                  
+                  # Output results
+                  print(f"Drift detection completed. Found {len(drifts)} drift(s)")
+                  for drift in drifts:
+                      print(f"- {drift['severity'].upper()}: {drift['description']}")
+                  
+                  # Set output for GitHub Actions
+                  with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                      f.write(f"drift_count={len(drifts)}\n")
+                      f.write(f"has_critical_drifts={'true' if any(d['severity'] == 'critical' for d in drifts) else 'false'}\n")
+                      f.write(f"drift_entity_id={drift_entity.get('entity', {}).get('identifier', '')}\n")
+                  
+                  # Save detailed results
+                  with open("drift-results.json", "w") as f:
+                      json.dump({
+                          "scan_date": datetime.now().isoformat(),
+                          "total_drifts": len(drifts),
+                          "drifts": drifts,
+                          "entity_id": drift_entity.get("entity", {}).get("identifier", "")
+                      }, f, indent=2)
+                  
+              except Exception as e:
+                  print(f"Error during drift detection: {e}")
+                  exit(1)
+          
+          if __name__ == "__main__":
+              main()
+          EOF
+
+      - name: Run drift detection
+        id: drift_detection
+        env:
+          SCAN_TYPE: ${{ github.event.inputs.scan_type || 'scheduled' }}
+          SCOPE: ${{ github.event.inputs.scope || 'all' }}
+        run: |
+          python drift_detector.py
+
+      - name: Upload drift results
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-detection-results
+          path: drift-results.json
+          retention-days: 30
+
+      - name: Auto-remediate low-risk drifts
+        if: ${{ github.event.inputs.auto_remediate == 'true' }}
+        run: |
+          echo "Auto-remediation would be implemented here"
+          echo "This would apply fixes for low-risk configuration drifts"
+
+      - name: Notify on critical drifts
+        if: steps.drift_detection.outputs.has_critical_drifts == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const driftCount = '${{ steps.drift_detection.outputs.drift_count }}';
+            const entityId = '${{ steps.drift_detection.outputs.drift_entity_id }}';
+            
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚨 Critical Configuration Drift Detected`,
+              body: `Critical configuration drift has been detected in the Port infrastructure.
+              
+              **Details:**
+              - Total drifts found: ${driftCount}
+              - Contains critical severity drifts
+              - Port entity ID: ${entityId}
+              - Detection time: ${new Date().toISOString()}
+              
+              **Action Required:**
+              1. Review the drift detection results
+              2. Analyze the root cause of configuration drift
+              3. Apply necessary corrections
+              4. Update baseline configuration if needed
+              
+              See the workflow run for detailed information.`,
+              labels: ['critical', 'infrastructure', 'drift-detection']
+            });
+
+      - name: Post summary
+        run: |
+          echo "## Drift Detection Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Scan Type**: ${{ github.event.inputs.scan_type || 'scheduled' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Scope**: ${{ github.event.inputs.scope || 'all' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Total Drifts Found**: ${{ steps.drift_detection.outputs.drift_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Critical Drifts**: ${{ steps.drift_detection.outputs.has_critical_drifts }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Port Entity ID**: ${{ steps.drift_detection.outputs.drift_entity_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Check the Port.io organization for detailed drift analysis." >> $GITHUB_STEP_SUMMARY

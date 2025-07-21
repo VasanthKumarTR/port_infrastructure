@@ -1,0 +1,168 @@
+name: Provision Microservice
+
+on:
+  workflow_dispatch:
+    inputs:
+      service_name:
+        description: 'Service name (kebab-case)'
+        required: true
+        type: string
+      language:
+        description: 'Programming language'
+        required: true
+        type: choice
+        options:
+          - go
+          - python
+          - typescript
+          - java
+      framework:
+        description: 'Framework'
+        required: true
+        type: choice
+        options:
+          - fastapi
+          - gin
+          - express
+          - spring-boot
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+      owner_email:
+        description: 'Service owner email'
+        required: true
+        type: string
+      team:
+        description: 'Owning team'
+        required: true
+        type: choice
+        options:
+          - platform
+          - backend
+          - frontend
+          - mobile
+          - data
+
+jobs:
+  provision:
+    name: Provision Microservice
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout template repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/microservice-template-${{ github.event.inputs.language }}
+          path: template
+          
+      - name: Create new repository
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const serviceName = '${{ github.event.inputs.service_name }}';
+            const repoName = serviceName;
+            
+            // Create new repository
+            const repo = await github.rest.repos.createInOrg({
+              org: context.repo.owner,
+              name: repoName,
+              description: `${serviceName} microservice`,
+              private: true,
+              auto_init: false
+            });
+            
+            console.log(`Created repository: ${repo.data.html_url}`);
+            
+            // Set repository variables
+            await github.rest.actions.createOrgVariable({
+              org: context.repo.owner,
+              name: 'SERVICE_NAME',
+              value: serviceName,
+              selected_repository_ids: [repo.data.id]
+            });
+
+      - name: Setup repository content
+        run: |
+          # Clone the new repository
+          git clone https://github.com/${{ github.repository_owner }}/${{ github.event.inputs.service_name }}.git service
+          cd service
+          
+          # Copy template files
+          cp -r ../template/* .
+          cp -r ../template/.github .
+          
+          # Update template placeholders
+          find . -type f -name "*.md" -o -name "*.yml" -o -name "*.yaml" -o -name "*.json" | \
+            xargs sed -i "s/{{SERVICE_NAME}}/${{ github.event.inputs.service_name }}/g"
+          find . -type f -name "*.md" -o -name "*.yml" -o -name "*.yaml" -o -name "*.json" | \
+            xargs sed -i "s/{{LANGUAGE}}/${{ github.event.inputs.language }}/g"
+          find . -type f -name "*.md" -o -name "*.yml" -o -name "*.yaml" -o -name "*.json" | \
+            xargs sed -i "s/{{FRAMEWORK}}/${{ github.event.inputs.framework }}/g"
+          find . -type f -name "*.md" -o -name "*.yml" -o -name "*.yaml" -o -name "*.json" | \
+            xargs sed -i "s/{{OWNER_EMAIL}}/${{ github.event.inputs.owner_email }}/g"
+          find . -type f -name "*.md" -o -name "*.yml" -o -name "*.yaml" -o -name "*.json" | \
+            xargs sed -i "s/{{TEAM}}/${{ github.event.inputs.team }}/g"
+          
+          # Commit and push
+          git config user.name "Port Automation"
+          git config user.email "automation@yourcompany.com"
+          git add .
+          git commit -m "Initial service setup from template"
+          git push origin main
+
+      - name: Create Port entity
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          operation: UPSERT
+          identifier: ${{ github.event.inputs.service_name }}
+          blueprint: microservice
+          properties: |
+            {
+              "identifier": "${{ github.event.inputs.service_name }}",
+              "language": "${{ github.event.inputs.language }}",
+              "framework": "${{ github.event.inputs.framework }}",
+              "owner": "${{ github.event.inputs.owner_email }}",
+              "team": "${{ github.event.inputs.team }}",
+              "repo_url": "https://github.com/${{ github.repository_owner }}/${{ github.event.inputs.service_name }}",
+              "deployment_tier": "medium",
+              "data_classification": "internal"
+            }
+          relations: |
+            {
+              "repository": "${{ github.event.inputs.service_name }}"
+            }
+
+      - name: Deploy to development environment
+        if: github.event.inputs.environment == 'development'
+        run: |
+          echo "Deploying ${{ github.event.inputs.service_name }} to development"
+          # Add deployment logic here
+
+      - name: Create summary
+        run: |
+          echo "## Microservice Provisioning Complete! 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Service Details:**" >> $GITHUB_STEP_SUMMARY
+          echo "- **Name**: ${{ github.event.inputs.service_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Language**: ${{ github.event.inputs.language }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Framework**: ${{ github.event.inputs.framework }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Owner**: ${{ github.event.inputs.owner_email }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Team**: ${{ github.event.inputs.team }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Created Resources:**" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ GitHub Repository: https://github.com/${{ github.repository_owner }}/${{ github.event.inputs.service_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Port Entity: Created in microservice blueprint" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ CI/CD Pipeline: Configured and ready" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Clone the repository and start developing" >> $GITHUB_STEP_SUMMARY
+          echo "2. Update the README with service-specific information" >> $GITHUB_STEP_SUMMARY
+          echo "3. Configure any additional integrations needed" >> $GITHUB_STEP_SUMMARY
+          echo "4. Deploy to higher environments when ready" >> $GITHUB_STEP_SUMMARY
