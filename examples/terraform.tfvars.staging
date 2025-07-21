@@ -4,7 +4,7 @@
 
 # Environment Configuration
 environment = "staging"
-team_email  = "team@example.com"
+team_email  = "vasanth@icopilot.in"
 
 # AWS Configuration (region only, secrets come from GitHub)
 aws_region = "us-east-1"
@@ -27,7 +27,7 @@ available_teams = [
 ]
 
 approval_recipients = [
-  "team@example.com"
+  "vasanth@icopilot.in"
 ]
 
 github_organization = "VasanthKumarTR"
