@@ -9,12 +9,14 @@ on:
     paths:
       - '**.tofu'
       - '**.tf'
+      - 'examples/**'
       - '.github/workflows/deploy.yml'
   pull_request:
     branches: [main]
     paths:
       - '**.tofu'
       - '**.tf'
+      - 'examples/**'
   workflow_dispatch:
     inputs:
       environment:
