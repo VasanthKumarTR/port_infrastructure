@@ -36,9 +36,9 @@ env:
   TF_VAR_port_client_secret: ${{ secrets.PORT_CLIENT_SECRET }}
   TF_VAR_aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
   TF_VAR_aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  TF_VAR_github_app_id: ${{ secrets.GITHUB_APP_ID }}
-  TF_VAR_github_private_key: ${{ secrets.GITHUB_PRIVATE_KEY }}
-  TF_VAR_github_installation_id: ${{ secrets.GITHUB_INSTALLATION_ID }}
+  TF_VAR_github_app_id: ${{ secrets.GH_APP_ID }}
+  TF_VAR_github_private_key: ${{ secrets.GH_PRIVATE_KEY }}
+  TF_VAR_github_installation_id: ${{ secrets.GH_INSTALLATION_ID }}
   TF_VAR_azure_client_id: ${{ secrets.AZURE_CLIENT_ID }}
   TF_VAR_azure_client_secret: ${{ secrets.AZURE_CLIENT_SECRET }}
   TF_VAR_azure_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
