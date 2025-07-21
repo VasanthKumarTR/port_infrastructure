@@ -1,0 +1,40 @@
+# Port.io Infrastructure Configuration - PRODUCTION Environment
+# This file contains production-specific configuration values
+# Secrets should be provided via GitHub secrets, not hardcoded here
+
+# Environment Configuration
+environment = "prod"
+team_email  = "team@example.com"
+
+# AWS Configuration (region only, secrets come from GitHub)
+aws_region = "us-east-1"
+
+# Port Configuration (base URL only, secrets come from GitHub)
+port_base_url = "https://api.getport.io"
+
+# Optional Configuration
+enable_audit_logging     = true
+drift_detection_schedule = "0 2 * * 0"  # Weekly on Sunday at 2 AM (different from staging)
+sync_schedule           = "0 3 * * *"   # Daily at 3 AM (different from staging)
+
+# Team Configuration
+available_teams = [
+  "platform",
+  "backend",
+  "frontend",
+  "mobile",
+  "data"
+]
+
+approval_recipients = [
+  "team@example.com"
+]
+
+github_organization = "VasanthKumarTR"
+github_actions_repo = "port_infrastructure"
+
+# Webhook URLs for actions (update these with your actual production endpoints)
+dora_webhook_url            = "https://prod-dora-metrics.example.com/webhook"
+dora_collection_webhook_url = "https://prod-dora-collector.example.com/webhook"
+port_webhook_url           = "https://prod-port-webhook.example.com/webhook"
+github_actions_webhook_url  = "https://api.github.com/repos/VasanthKumarTR/port_infrastructure/dispatches"
