@@ -2,6 +2,7 @@
 # Configures the Port provider with authentication and base URL
 
 terraform {
+  required_version = ">= 1.6"
   required_providers {
     port = {
       source  = "port-labs/port-labs"
